@@ -91,7 +91,7 @@ _TOKEN = re.compile(
     rf"|(?P<pow>(?:\d+(?:\.\d+)?|[A-Za-z{_GREEK}][A-Za-z0-9_']*)\s*(?:{_EXP}|[²³]))"
     r"|(?P<num>\d+(?:[.,]\d+)?)"
     rf"|(?P<ident>[A-Za-z{_GREEK}][A-Za-z0-9_']*)"
-    r"|(?P<op>[=+\-−×*/÷∝≈≠<>≤≥√·→%])"
+    r"|(?P<op>[=+\-−×*/÷∝≈≠<>≤≥√·→%()])"
     r"|(?P<deva>[\u0900-\u097f]+)"
     r"|(?P<space>\s+)"
     r"|(?P<punct>.)")
@@ -179,7 +179,9 @@ def _speak_run(run: list[tuple[str, str, int, int]], lexicon: dict, sym: dict) -
         elif kind == "num":
             out.append(num_words(s))
         elif kind == "op":
-            if s == "/" and out and re.fullmatch(r"d [A-Z]", out[-1] or ""):
+            if s in ("(", ")"):
+                pass
+            elif s == "/" and out and re.fullmatch(r"d [A-Z]", out[-1] or ""):
                 out.append("by")
             elif s in ("-", "−") and (not out or toks[i - 1][0] == "op"):
                 out.append("minus")
@@ -207,7 +209,8 @@ def normalise(text: str, lexicon: dict | None = None) -> Normalised:
         return j == 0 or toks[j - 1][0] == "space"
 
     def binary_op(tok_idx):
-        return tok_idx is not None and toks[tok_idx][0] == "op" and not unary_minus(tok_idx)
+        return (tok_idx is not None and toks[tok_idx][0] == "op" and toks[tok_idx][1] not in "()"
+                and not unary_minus(tok_idx))
 
     def neighbour_idx(i, step):
         j = i + step
@@ -223,8 +226,9 @@ def normalise(text: str, lexicon: dict | None = None) -> Normalised:
             li, ri = neighbour_idx(i, -1), neighbour_idx(i, +1)
             near_op = binary_op(li) or binary_op(ri)
             glued_to_num = i > 0 and toks[i - 1][0] in ("num", "pow")  # "2as", "4pi"
+            func = s in FUNCS and ri is not None and toks[ri][0] in ("ident", "num", "pow", "op")  # "cos θ"
             has_mark = bool(re.search(rf"[\d_'{_GREEK}]", s))
-            mathish.append(bool(near_op or has_mark or glued_to_num))
+            mathish.append(bool(near_op or has_mark or glued_to_num or func))
         else:
             mathish.append(False)
     # maximal runs of math-ish tokens joined only by spaces
@@ -252,7 +256,7 @@ def normalise(text: str, lexicon: dict | None = None) -> Normalised:
         if speak and not (kinds == {"op"} and run[0][1] in "-/"):
             spoken = _speak_run(run, lexicon, sym)
             formulas.append(FormulaSpan(run[0][2], run[-1][3], text[run[0][2]:run[-1][3]], spoken))
-            out.append(spoken)
+            out.append(" " + spoken + " ")
         else:
             out.append(text[run[0][2]:run[-1][3]])
         i = j + 1

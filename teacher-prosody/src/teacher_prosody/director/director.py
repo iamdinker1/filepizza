@@ -53,6 +53,8 @@ FUNCTION = {"hai", "hain", "ka", "ki", "ke", "ko", "se", "me", "mein", "the", "a
             "diya", "de", "do", "gaya", "tha", "thi", "kya", "we", "you", "it", "this", "that", "yahan", "wahan"}
 
 
+NUMBER_WORDS = set("zero one two three four five six seven eight nine ten eleven twelve twenty thirty forty fifty sixty "
+                   "seventy eighty ninety hundred thousand half double triple".split()) | {"shunya", "ek", "do", "teen", "char"}
 CLAUSE_OPENERS = {"aur", "and", "but", "lekin", "kyunki", "because", "toh", "so", "par", "magar", "jabki", "while"}
 
 
@@ -99,7 +101,11 @@ def _phrase_pause(profile: dict | None) -> float:
 
 
 def _channel_weights(profile: dict | None) -> dict:
-    ch = (profile or {}).get("emphasis_channels") or {"pitch": 0.45, "duration": 0.3, "energy": 0.15, "pause": 0.1}
+    ch = dict((profile or {}).get("emphasis_channels") or {"pitch": 0.45, "duration": 0.3, "energy": 0.15, "pause": 0.1})
+    acc = (profile or {}).get("accents") or {}
+    if acc.get("share_with_pre_pause") is not None:  # acoustic measure beats approximate word timing
+        ch["pause"] = acc["share_with_pre_pause"]
+        ch["energy"] = acc.get("share_with_energy_peak", ch.get("energy", 0.15))
     tot = sum(ch.values()) or 1
     return {k: ch.get(k, 0) / tot for k in ("pitch", "duration", "energy", "pause")}
 
@@ -151,6 +157,15 @@ def plan_lesson(lesson_id: str, teacher_id: str, beats: list[dict], concept_map:
                 scores[wp.i] = (2, 2.0, "first mention of a key term (later mentions are given, de-accented)")
             if c in key_terms:
                 seen_terms.add(c)  # given from here on, including later in this beat
+        answer_i = None
+        if beat == "reveal":
+            # the answer the question/build-up set up: first number, else first content word
+            nums = [wp.i for wp in words if _clean(wp.w) in NUMBER_WORDS]
+            content = [wp.i for wp in words if _clean(wp.w) and _clean(wp.w) not in FUNCTION]
+            answer_i = nums[0] if nums else (content[0] if content else None)
+            if answer_i is not None and scores.get(answer_i, (0, 0.0, ""))[1] < 2.7:
+                lvl = max(2, scores.get(answer_i, (0, 0.0, ""))[0])
+                scores[answer_i] = (lvl, 2.7, "the answer the preceding question / build-up set up")
         # emphasis budget: <= 2 per clause, <= 3 per beat, one strong (3) per beat
         clause_id, cid = [], 0
         for wp in words:
@@ -172,11 +187,15 @@ def plan_lesson(lesson_id: str, teacher_id: str, beats: list[dict], concept_map:
         for i, (lvl, _, why) in kept.items():
             wp = words[i]
             wp.emphasis = lvl
-            wp.pitch_st = round(1.2 * lvl * (0.5 + cw["pitch"]), 2)
+            acc = ((profile or {}).get("accents") or {}).get("size_st") or {}
+            if acc.get("n", 0) >= 30:  # teacher's measured accent sizes (st above the declination line)
+                wp.pitch_st = round(min(8.0, {1: acc["q25"], 2: acc["median"], 3: acc["p90"]}[lvl]), 2)
+            else:
+                wp.pitch_st = round(1.2 * lvl * (0.5 + cw["pitch"]), 2)
             wp.dur_scale = round(1 + 0.12 * lvl * (0.5 + cw["duration"]), 3)
             wp.energy_db = round(1.0 * lvl * (0.5 + cw["energy"]), 2)
             # a pre-emphasis pause only for the one strong focus (or the answer word of a reveal)
-            if cw["pause"] >= 0.08 and (lvl == 3 or beat == "reveal" and lvl >= 2):
+            if cw["pause"] >= 0.05 and i > 0 and (lvl == 3 or i == answer_i):
                 wp.pre_pause_s = round(0.15 + 0.3 * cw["pause"], 2)
             wp.reason = why
         # explicit clause-boundary pauses (so every backend and the PSOLA editor get the same timing)

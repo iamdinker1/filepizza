@@ -219,6 +219,13 @@ def teacher_findings(audio_path: str, transcript: str, out_dir: str, teacher_id:
                           "share_with_pre_pause": float(np.mean([a["pre_pause"] for a in acc])) if acc else None,
                           "per_utterance": _dist([sum(a["utt"] == u.utt_id for a in acc) for u in utts]),
                           "method": "transcript-free: F0 peaks >= 3 st above the utterance declination line"}
+    # measured accent sizes feed the director's emphasis targets
+    profile["accents"] = {"size_st": F["pitch_accents"]["size_st"], "share_with_energy_peak": F["pitch_accents"]["share_with_energy_peak"],
+                          "share_with_pre_pause": F["pitch_accents"]["share_with_pre_pause"]}
+    gaps_ok = [g for g in gaps if g <= 3.0]
+    profile["utterance_gaps_s"] = _dist(gaps_ok)
+    profile["n_long_silences_over_3s"] = int(sum(g > 3.0 for g in gaps))
+    write_json(out / "profile.json", json.loads(json.dumps(profile, default=float)))
     F["code_switch"] = profile.get("code_switch")
     F["beats_rule_based"] = {b: {"n": d["n"], "rate_rel": d["rate_rel"].get("median"),
                                  "f0_rel_st": d["f0_median_rel_st"].get("median"), "energy_rel_db": d["energy_rel_db"].get("median"),

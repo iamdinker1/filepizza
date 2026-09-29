@@ -4,21 +4,24 @@ Measure how a teacher speaks while teaching, turn that into an explainable perfo
 check whether generated audio for cached one-to-one AI lectures actually delivers it. Covered:
 pitch, local pace, pauses, energy, emphasis, question delivery, build-up/reveal, and Hindi–English–Hinglish switching.
 
-> **Status: pilot tooling. Nothing here is evidence about real TTS quality yet.** Every stage
-> runs end to end on mock espeak-ng audio with scripted "teacher" behaviour (`tp demo`).
-> Real-lecture analysis is waiting on consented recordings. Components marked **UNVERIFIED**
-> follow documented APIs but could not be run in the build sandbox. That sandbox had no network
-> access to huggingface.co, YouTube or TTS APIs, and no GPU.
+> **Status: pilot tooling, first real run done.** Every stage runs end to end on mock espeak-ng
+> audio with scripted "teacher" behaviour (`tp demo`, 44 tests). It has also been run on one
+> consented 30-minute Rajwant Sir lecture: Whisper-turbo ASR on CPU, acoustic findings, profile,
+> a director plan driven by his measured profile, and a gold-set sheet. Word timings on real
+> audio are **approximate** until MFA is set up (the fallback aligner's median error is 70 ms on
+> mock audio). Components marked **UNVERIFIED** follow documented APIs but could not be run in the
+> build sandbox, which had no huggingface.co / YouTube / TTS-API access and no GPU.
+> Faculty audio and derived per-teacher outputs are kept out of this repository.
 
 ## What is where
 
 | Stage | Module | Runs on CPU here | Notes |
 |---|---|---|---|
 | Ingest, clean, segment | `preprocess/ingest.py` | yes | Keeps the original audio; features are measured on lightly cleaned audio, never on enhancer output |
-| ASR / alignment / diarization | `preprocess/backends.py` | captions + TextGrid readers, proportional FALLBACK aligner | faster-whisper, MFA, pyannote, ECAPA are **UNVERIFIED** here |
+| ASR / alignment / diarization | `preprocess/backends.py` | Whisper-turbo via sherpa-onnx (GitHub-hosted weights, Devanagari decoding fixed), captions + TextGrid readers, syllable-anchored APPROXIMATE aligner | faster-whisper, MFA, pyannote, ECAPA are **UNVERIFIED** here |
 | Quality flags | `preprocess/quality.py` | yes | Low SNR, clipping, music-like, not-teacher, low alignment confidence |
 | Session-level splits, leakage | `preprocess/split.py` | yes | The split unit is the session, never the utterance |
-| Language spans, code-mixing index | `preprocess/lang.py` | yes | Heuristic Devanagari / romanised Hindi / English / maths tagger |
+| Language spans, code-mixing index | `preprocess/lang.py` | yes | Heuristic tagger incl. English loanwords written in Devanagari; Devanagari→Latin for cue matching |
 | F0 (Praat, pYIN), octave repair, normalisations | `features/f0.py` | yes | Semitones re median, z-log-F0, ERB, phrase-baseline; compared in `profile/confounds.py` |
 | Energy, VAD, breaths | `features/energy.py` | yes | dB relative to the recording's speech level removes gain differences |
 | Local rate | `features/rate.py` | yes | Syllable nuclei (no transcript) and alignment-based |
@@ -37,12 +40,15 @@ pitch, local pace, pauses, energy, emphasis, question delivery, build-up/reveal,
 | Listening tests | `eval/listening_test.py` | yes | Blinded packaging; two-way cluster-bootstrap CIs; ICC; disagreements |
 | Long-form checks | `eval/longform.py` | yes | Drift, cadence repetition, over-acting, dead air at 5/15/30/60 min |
 | Dashboard | `dashboard/report.py` | yes | Self-contained HTML |
+| Teacher findings | `findings.py` | yes (real lecture) | Voice, pauses, questions, transcript-free pitch accents, code-switching, drift, clips, gold sheet |
 
 ## Setup
 
 ```bash
 python3.11 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.lock.txt && pip install -e .
+pip install -r requirements.lock.txt && pip install -e . sherpa-onnx
+# CPU ASR models (GitHub releases of k2-fsa/sherpa-onnx, tag asr-models):
+#   sherpa-onnx-whisper-turbo.tar.bz2 and silero_vad.onnx -> models/
 # optional: apt-get install espeak-ng   (mock voices for tests/demo)
 # optional GPU/network extras: pip install -e ".[asr,align,diarize,tts]"
 ```
@@ -51,7 +57,9 @@ pip install -r requirements.lock.txt && pip install -e .
 
 ```bash
 tp demo --out out/demo                    # full offline pipeline on MOCK audio (~20 s on 4 CPUs)
-tp analyze --manifest manifest.yaml --out out/rajwant   # real recordings (see pipeline.py for the manifest format)
+tp transcribe --audio lecture.wav --model-dir models/sherpa-onnx-whisper-turbo --vad models/silero_vad.onnx --out lecture.asr.json
+tp findings --audio lecture.wav --transcript lecture.asr.json --teacher rajwant_singh --out out/rajwant
+tp analyze --manifest manifest.yaml --out out/corpus   # many sessions (see pipeline.py for the manifest format)
 tp normalize "Force double kar diya toh a = F/m = 5 m/s^2 hoga?"
 tp plan --script lesson.yaml --profile out/rajwant/profile.json --out out/plan
 tp listening-package --stimuli stimuli.csv --out out/lt

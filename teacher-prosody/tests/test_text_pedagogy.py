@@ -62,3 +62,21 @@ def test_llm_request_shape():
     assert req["model"] == "claude-opus-5-5"
     fmt = req["output_config"]["format"]
     assert fmt["type"] == "json_schema" and "reveal" in fmt["schema"]["properties"]["labels"]["items"]["properties"]["beat"]["enum"]
+
+
+def test_devanagari_loanwords_and_transliteration():
+    from teacher_prosody.preprocess.lang import deva_to_latin, english_in_devanagari, is_question_text
+
+    for w in ("वोल्टेज", "डायरेक्शन", "एक्सेलरेशन", "फिजिक्स", "स्केलर", "वेक्टर"):
+        assert english_in_devanagari(w), w
+    for w in ("देखो", "क्या", "होगा", "समझते", "बच्चों", "मतलब", "मात्रा"):
+        assert english_in_devanagari(w) is None, w
+    assert deva_to_latin("समझते") == "samajhte" and deva_to_latin("कहते") == "kahte"
+    assert is_question_text("mass की कोई direction है क्या") and not is_question_text("direction तो होती है")
+    labs = annotate(["तो acceleration का क्या होगा", "ध्यान रखना यहाँ पर students गलती करते हैं"])
+    assert [l.beat for l in labs] == ["rhetorical_question", "common_mistake"]
+
+
+def test_bracketed_formula_and_prose_brackets():
+    assert normalise("R = √(A^2 + B^2 + 2AB cos θ)").spoken == "R equals root A square plus B square plus two A B cos theta"
+    assert normalise("Ab dekho (yeh important hai)").spoken == "Ab dekho yeh important hai"

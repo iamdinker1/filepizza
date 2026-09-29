@@ -52,6 +52,9 @@ def _session_baselines(items: list[ProfileItem]) -> dict[str, dict]:
     return base
 
 
+LONG_SILENCE_S = 3.0  # longer gaps in lecture recordings are usually board work / demos, not prosody
+
+
 def build_profile(items: list[ProfileItem], teacher_id: str) -> dict:
     items = sorted(items, key=lambda it: (it.utt.recording_id, it.utt.start))
     base = _session_baselines(items)
@@ -102,7 +105,8 @@ def build_profile(items: list[ProfileItem], teacher_id: str) -> dict:
             else:
                 rc = rate_change_before(prev.utt.end, it.rf.rate_t, it.rf.rate, lead=2.0)
                 pre["lead_in_rate_slope"].append(rc["slope"])
-            pre["pause_before_s"].append(gap)
+            if np.isfinite(gap) and gap <= LONG_SILENCE_S:
+                pre["pause_before_s"].append(gap)
         if it.utt.beat == "transition" and prev is not None:
             e = it.rf.energy
             trans["energy_reset_db"].append(e.mean_norm(it.utt.start, it.utt.start + 1.0) - e.mean_norm(prev.utt.end - 1.0, prev.utt.end))
@@ -115,7 +119,7 @@ def build_profile(items: list[ProfileItem], teacher_id: str) -> dict:
         if it.ana.stats.get("is_question"):
             q["final_types"][it.ana.stats.get("final_type", "unknown")] += 1
             nxt = items[i + 1] if i + 1 < len(items) and items[i + 1].utt.recording_id == it.utt.recording_id else None
-            if nxt:
+            if nxt and nxt.utt.start - it.utt.end <= LONG_SILENCE_S:
                 q["post_question_pause_s"].append(nxt.utt.start - it.utt.end)
 
     # emphasis channels: share of clearly prominent words that use each channel (multi-label:

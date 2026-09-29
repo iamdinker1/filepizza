@@ -105,3 +105,13 @@ def test_psola_changes_duration_and_pitch():
     f_after = extract_f0(ea).at(ew[1].start, ew[1].end)
     gain = 12 * np.log2(np.nanpercentile(f_after, 90) / np.nanpercentile(f_before, 90))
     assert gain > 2.0
+
+
+def test_reveal_answer_and_measured_accent_sizes():
+    lesson = [{"beat": "rhetorical_question", "text": "Resultant kitna hoga?"},
+              {"beat": "reveal", "text": "20 N. Seedha addition."}]
+    prof = {"accents": {"size_st": {"n": 500, "q25": 3.9, "median": 4.8, "p90": 7.4}, "share_with_pre_pause": 0.17,
+                        "share_with_energy_peak": 0.9}}
+    p = plan_lesson("t", "teacher", lesson, {"key_terms": ["resultant"]}, prof)
+    ans = p.beats[1].emphasised
+    assert ans and ans[0].w == "twenty" and ans[0].pitch_st == 4.8
