@@ -35,6 +35,7 @@ pitch, local pace, pauses, energy, emphasis, question delivery, build-up/reveal,
 | TTS adapters | `synth/backends.py` | EspeakMock only | ElevenLabs and CommandTTS (open models) **UNVERIFIED** |
 | PSOLA prosody post-edit | `synth/prosody_edit.py` | yes | Imposes plan duration, F0, energy and pauses on any candidate |
 | Style restyling | `synth/restyle.py` | yes (real ElevenLabs audio) | Transcript-free: moves pace, pause distribution, accent size and rising-ending share toward a teacher's measured style; keeps words, timbre and register; reports before/after on the same units |
+| Humanize layer | `synth/humanize.py` | yes (real ElevenLabs audio) | Keeps the TTS voice and adds a teacher's within-sentence dynamics: stressed syllables stretched and unstressed ones tightened, slowing into phrase ends, slow-down around each phrase's key point and faster connecting stretches, pauses remapped to his, wider pitch movement. One strength setting, calibrated so the output's measured dynamics land on the teacher's |
 | Beat stitching | `synth/stitch.py` | yes | Planned pauses, equal-power fades, loudness levelling, join diagnostics |
 | Voice conversion (Prototype B) | `synth/voice_convert.py` | yes, CPU (real audio) | kNN-VC with the teacher's recordings as the matching set; optional intonation transplant. Needs signed voice-cloning consent; outputs carry a provenance file marking them synthetic |
 | Candidate ranking and QC | `qc/rank.py` | yes (text and speaker checks need backends) | Hard gates, regeneration rules, review queue, weight calibration |
@@ -64,6 +65,8 @@ tp findings --audio lecture.wav --transcript lecture.asr.json --teacher rajwant_
 tp analyze --manifest manifest.yaml --out out/corpus   # many sessions (see pipeline.py for the manifest format)
 tp normalize "Force double kar diya toh a = F/m = 5 m/s^2 hoga?"
 tp restyle --audio elevenlabs.mp3 --target teacher_lecture.wav --save-target teacher_style.json --out restyled.wav
+tp humanize --audio tts_clips/ --teacher teacher_lecture.wav --save-teacher teacher_humanize.json --calibrate --out humanized/
+tp humanize --audio new_clip.mp3 --teacher teacher_humanize.json --out humanized/   # reuse the saved profile
 tp convert --audio take.wav --teacher-audio teacher_30min.wav --model-dir models/knnvc --consent-ref <ID> --out take_teacher_voice.wav
 tp plan --script lesson.yaml --profile out/rajwant/profile.json --out out/plan
 tp listening-package --stimuli stimuli.csv --out out/lt

@@ -172,3 +172,27 @@ def test_voice_convert_output_stays_sample_aligned():
     src = Audio(np.random.default_rng(0).normal(0, 0.1, 16000 * 47 + 123).astype(np.float32), 16000)
     out = convert(FakeKNN(), src, None, chunk_s=20.0)
     assert len(out.y) == len(src.y)
+
+
+def test_humanize_adds_teacher_dynamics_and_keeps_rate():
+    from teacher_prosody.synth.humanize import HumanizeParams, humanize, measure_dynamics
+    from teacher_prosody.testing import WordSpec, espeak_utterance
+
+    words = "acceleration is the rate of change of velocity with time and it is a vector".split()
+    spec = []
+    for k in range(5):  # evenly paced, flat-ish "TTS" phrases with near-identical pauses (MOCK)
+        spec += [WordSpec(w, speed=165, pause_after=0.0) for w in (words[:8] if k % 2 else words[6:])]
+        spec[-1] = WordSpec(spec[-1].text, speed=165, pause_after=0.5 if k % 2 else 0.35)
+    src, _ = espeak_utterance(spec, seed=3)
+    before = measure_dynamics(src)
+    out, log = humanize(src, [0.25, 0.3, 0.5, 0.6, 0.8, 1.0, 1.4], HumanizeParams(strength=1.0))
+    after = measure_dynamics(out)
+    assert out.sr == src.sr and log["phrases"] == 5
+    assert 0.9 < out.duration / src.duration < 1.25       # a layer, not a slow-down
+    assert after["final_slowing"] > before["final_slowing"] + 0.2
+    assert after["syllable_timing_cv"] > before["syllable_timing_cv"]
+    assert after["pitch_range_st"] > before["pitch_range_st"] + 0.5
+    assert after["pause_cv"] > before["pause_cv"] + 0.1  # pauses take on the teacher's variety
+    fast, log = humanize(src, None, HumanizeParams(strength=1.0), teacher_rate=before["artic_rate_sps"] * 1.12)
+    assert log["speech_duration_factor"] < 0.92            # speech sped up to the teacher's pace ...
+    assert fast.duration < out.duration                    # ... on top of the same dynamics

@@ -51,6 +51,15 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--strength", type=float, default=1.0)
     rs.add_argument("--match-register", action="store_true", help="also move the voice's pitch register (usually sounds processed)")
 
+    hz = sub.add_parser("humanize", help="add a teacher's within-sentence dynamics to TTS audio, keeping the voice")
+    hz.add_argument("--audio", required=True, nargs="+", help="TTS files and/or folders of them")
+    hz.add_argument("--teacher", required=True, help="teacher profile JSON (from --save-teacher) or teacher lecture audio")
+    hz.add_argument("--save-teacher", help="write the measured teacher profile JSON here")
+    hz.add_argument("--out", required=True, help="output folder (or a .wav path for a single input)")
+    hz.add_argument("--sr", type=int, default=44100)
+    hz.add_argument("--strength", type=float, help="default: the profile's calibrated strength, else 1.0")
+    hz.add_argument("--calibrate", action="store_true", help="search the strength on the first input (<=200 s) and store it in --save-teacher")
+
     vc = sub.add_parser("convert", help="re-render a performance in the teacher's voice (kNN-VC; needs voice-cloning consent)")
     vc.add_argument("--audio", required=True, help="source performance (TTS take or human read)")
     vc.add_argument("--teacher-audio", required=True, help="teacher reference speech (5-30 min, clean)")
@@ -137,6 +146,35 @@ def main(argv: list[str] | None = None) -> int:
         rep = {"evaluation": ev, "edits": {k: v for k, v in edits.items() if not k.startswith("_")}}
         Path(args.out).with_suffix(".report.json").write_text(json.dumps(rep, indent=1, default=float))
         print(json.dumps(ev, indent=1, default=float))
+    elif args.cmd == "humanize":
+        from .audio import load, save
+        from .synth.humanize import HumanizeParams, calibrate, humanize, measure_dynamics, teacher_profile
+
+        if args.teacher.endswith(".json"):
+            prof = json.loads(Path(args.teacher).read_text())
+        else:
+            prof = teacher_profile(load(args.teacher))
+        exts = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus"}
+        files = [f for a in map(Path, args.audio) for f in (sorted(a.iterdir()) if a.is_dir() else [a]) if f.suffix.lower() in exts]
+        if args.calibrate and files:
+            sample = load(files[0], sr=16000, duration=200)
+            prof["strength"], trials = calibrate(sample, prof["dynamics"], prof["pauses_s"], prof["artic_rate_sps"])
+            print(json.dumps({"calibrated_strength": prof["strength"], "trials": trials}, indent=1, default=float))
+        if args.save_teacher:
+            Path(args.save_teacher).write_text(json.dumps(prof, indent=1))
+        strength = args.strength if args.strength is not None else prof.get("strength", 1.0)
+        single = len(files) == 1 and args.out.endswith(".wav")
+        out_dir = Path(args.out).parent if single else Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            dst = Path(args.out) if single else out_dir / (f.stem + "_humanized.wav")
+            src = load(f, sr=args.sr)
+            out, log = humanize(src, prof["pauses_s"], HumanizeParams(strength=strength), prof["artic_rate_sps"])
+            save(dst, out)
+            rep = {"source": str(f), "log": log, "before": measure_dynamics(src), "after": measure_dynamics(out),
+                   "teacher": prof["dynamics"]}
+            dst.with_suffix(".report.json").write_text(json.dumps(rep, indent=1, default=float))
+            print(f"{f.name} -> {dst} ({log['duration_in_s']} s -> {log['duration_out_s']} s)")
     elif args.cmd == "convert":
         from .audio import load, save
         from .synth.voice_convert import build_matching_set, convert, load_knnvc, transplant_intonation
