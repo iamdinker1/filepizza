@@ -34,6 +34,7 @@ pitch, local pace, pauses, energy, emphasis, question delivery, build-up/reveal,
 | Renderers | `director/render.py` | yes | Azure SSML, ElevenLabs requests with stitching context, inline tags, numeric word targets |
 | TTS adapters | `synth/backends.py` | EspeakMock only | ElevenLabs and CommandTTS (open models) **UNVERIFIED** |
 | PSOLA prosody post-edit | `synth/prosody_edit.py` | yes | Imposes plan duration, F0, energy and pauses on any candidate |
+| Style restyling | `synth/restyle.py` | yes (real ElevenLabs audio) | Transcript-free: moves pace, pause distribution, accent size and rising-ending share toward a teacher's measured style; keeps words, timbre and register; reports before/after on the same units |
 | Beat stitching | `synth/stitch.py` | yes | Planned pauses, equal-power fades, loudness levelling, join diagnostics |
 | Candidate ranking and QC | `qc/rank.py` | yes (text and speaker checks need backends) | Hard gates, regeneration rules, review queue, weight calibration |
 | Objective eval | `eval/objective.py` | yes | DTW only when texts match; distribution distances otherwise |
@@ -61,6 +62,7 @@ tp transcribe --audio lecture.wav --model-dir models/sherpa-onnx-whisper-turbo -
 tp findings --audio lecture.wav --transcript lecture.asr.json --teacher rajwant_singh --out out/rajwant
 tp analyze --manifest manifest.yaml --out out/corpus   # many sessions (see pipeline.py for the manifest format)
 tp normalize "Force double kar diya toh a = F/m = 5 m/s^2 hoga?"
+tp restyle --audio elevenlabs.mp3 --target teacher_lecture.wav --save-target teacher_style.json --out restyled.wav
 tp plan --script lesson.yaml --profile out/rajwant/profile.json --out out/plan
 tp listening-package --stimuli stimuli.csv --out out/lt
 tp listening-analyze --ratings ratings.csv --key out/lt/KEY_DO_NOT_SHARE.json

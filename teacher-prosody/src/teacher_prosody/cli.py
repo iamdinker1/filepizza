@@ -42,6 +42,15 @@ def main(argv: list[str] | None = None) -> int:
     tr.add_argument("--language", default="hi")
     tr.add_argument("--out", required=True)
 
+    rs = sub.add_parser("restyle", help="move TTS audio toward a teacher's measured delivery (PSOLA, transcript-free)")
+    rs.add_argument("--audio", required=True, help="TTS audio (any format ffmpeg reads)")
+    rs.add_argument("--target", required=True, help="teacher style JSON from --save-target, or teacher audio to measure")
+    rs.add_argument("--save-target", help="write the measured teacher style JSON here")
+    rs.add_argument("--out", required=True, help="output .wav")
+    rs.add_argument("--sr", type=int, default=44100)
+    rs.add_argument("--strength", type=float, default=1.0)
+    rs.add_argument("--match-register", action="store_true", help="also move the voice's pitch register (usually sounds processed)")
+
     d = sub.add_parser("demo", help="offline end-to-end demo on mock (espeak) audio")
     d.add_argument("--out", default="out/demo")
 
@@ -101,6 +110,23 @@ def main(argv: list[str] | None = None) -> int:
         segs = asr.transcribe(load(args.audio), progress=True)
         Path(args.out).write_text(json.dumps([{"start": s.start, "end": s.end, "text": s.text} for s in segs],
                                              ensure_ascii=False, indent=1), encoding="utf-8")
+    elif args.cmd == "restyle":
+        from .audio import load, save
+        from .synth.restyle import StyleStats, evaluate_restyle, measure_style, restyle
+
+        if args.target.endswith(".json"):
+            target = StyleStats.from_json(json.loads(Path(args.target).read_text()))
+        else:
+            target = measure_style(load(args.target))
+            if args.save_target:
+                Path(args.save_target).write_text(json.dumps(target.to_json()))
+        src = load(args.audio, sr=args.sr)
+        out, edits = restyle(src, target, strength=args.strength, match_register=args.match_register)
+        save(args.out, out)
+        ev = evaluate_restyle(out, edits, target)
+        rep = {"evaluation": ev, "edits": {k: v for k, v in edits.items() if not k.startswith("_")}}
+        Path(args.out).with_suffix(".report.json").write_text(json.dumps(rep, indent=1, default=float))
+        print(json.dumps(ev, indent=1, default=float))
     elif args.cmd == "demo":
         from .demo import run
 

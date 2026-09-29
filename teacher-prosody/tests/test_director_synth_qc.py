@@ -115,3 +115,27 @@ def test_reveal_answer_and_measured_accent_sizes():
     p = plan_lesson("t", "teacher", lesson, {"key_terms": ["resultant"]}, prof)
     ans = p.beats[1].emphasised
     assert ans and ans[0].w == "twenty" and ans[0].pitch_st == 4.8
+
+
+@needs_espeak
+def test_restyle_moves_pace_and_pauses_toward_target():
+    from teacher_prosody.synth.restyle import StyleStats, evaluate_restyle, measure_style, restyle
+    from teacher_prosody.testing import WordSpec, espeak_utterance
+
+    spec = []
+    for k in range(6):  # slow speaker with long pauses (MOCK)
+        spec += [WordSpec("force", speed=130), WordSpec("double", speed=130),
+                 WordSpec("hoga", speed=130, pitch=45, pause_after=0.9 if k % 2 else 0.6)]
+    src, _ = espeak_utterance(spec, seed=2)
+    s = measure_style(src)
+    target = StyleStats(duration_s=60, median_f0_hz=s.median_f0_hz, artic_rate_sps=s.artic_rate_sps * 1.15,
+                        pauses_s=[0.25, 0.3, 0.35, 0.4, 0.3, 0.28, 0.33], accent_sizes_st=s.accent_sizes_st or [4.0],
+                        accents_per_speech_min=s.accents_per_speech_min, rise_share=0.5, unit_f0_range_st=s.unit_f0_range_st,
+                        n_units=10, rise_delta_st=4.0)
+    out, ed = restyle(src, target)
+    ev = evaluate_restyle(out, ed, target)
+    assert out.duration < src.duration
+    assert ev["pause_median_s"]["after"] < ev["pause_median_s"]["before"]
+    assert ed["rate_duration_factor"] < 1.0
+    rt = StyleStats.from_json(target.to_json())
+    assert rt.artic_rate_sps == round(target.artic_rate_sps, 2)
