@@ -153,3 +153,22 @@ def test_transplant_intonation_moves_register_and_keeps_shape():
     v = f.hz[f.voiced]
     assert 170 < np.median(v) < 230                  # teacher register
     assert np.ptp(12 * np.log2(v / np.median(v))) > 5  # source movement (~7 st) carried over
+
+
+def test_voice_convert_output_stays_sample_aligned():
+    torch = __import__("pytest").importorskip("torch")
+    from teacher_prosody.audio import Audio
+    from teacher_prosody.synth.voice_convert import convert
+
+    class FakeKNN:  # mimics WavLM framing (drops a partial frame) and a 320-sample-hop vocoder
+        def get_features(self, x, vad_trigger_level=0):
+            n = (x.shape[-1] - 400) // 320 + 1
+            return torch.zeros(n, 4)
+
+        def match(self, q, matching_set, topk=4, tgt_loudness_db=None):
+            t = torch.arange(q.shape[0] * 320, dtype=torch.float32)
+            return 0.1 * torch.sin(2 * np.pi * 150 * t / 16000)
+
+    src = Audio(np.random.default_rng(0).normal(0, 0.1, 16000 * 47 + 123).astype(np.float32), 16000)
+    out = convert(FakeKNN(), src, None, chunk_s=20.0)
+    assert len(out.y) == len(src.y)
