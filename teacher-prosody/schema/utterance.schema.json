@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teacher-prosody/utterance.schema.json",
+  "title": "Utterance",
+  "description": "One teacher utterance with text, language spans, word/phone timing, pedagogy label and quality flags. One JSON object per line in utterances.jsonl.",
+  "type": "object",
+  "required": ["utt_id", "recording_id", "teacher_id", "session_id", "start", "end", "text", "words", "quality", "split"],
+  "properties": {
+    "utt_id": {"type": "string"},
+    "recording_id": {"type": "string"},
+    "teacher_id": {"type": "string"},
+    "session_id": {"type": "string", "description": "Teaching session; the unit of train/val/test splitting."},
+    "start": {"type": "number", "minimum": 0},
+    "end": {"type": "number", "minimum": 0},
+    "text_asr": {"type": "string"},
+    "text": {"type": "string", "description": "Corrected text (ASR text until a human corrects it)."},
+    "text_corrected_by": {"type": "string"},
+    "lang_spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start_char", "end_char", "lang", "script"],
+        "properties": {
+          "start_char": {"type": "integer", "minimum": 0},
+          "end_char": {"type": "integer", "minimum": 0},
+          "lang": {"enum": ["hi", "en", "math", "other"]},
+          "script": {"enum": ["deva", "latn", "sym", "mixed"]}
+        }
+      }
+    },
+    "words": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["w", "start", "end"],
+        "properties": {
+          "w": {"type": "string"},
+          "start": {"type": "number"},
+          "end": {"type": "number"},
+          "lang": {"enum": ["hi", "en", "math", "other"]},
+          "conf": {"type": "number", "minimum": 0, "maximum": 1},
+          "norm": {"type": "string"}
+        }
+      }
+    },
+    "phones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["p", "start", "end", "word_idx"],
+        "properties": {"p": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}, "word_idx": {"type": "integer"}}
+      }
+    },
+    "speaker": {"type": "string"},
+    "topic": {"type": "string"},
+    "recording_condition": {"enum": ["studio", "classroom", "online_live", "phone", "unknown"]},
+    "beat": {"type": "string"},
+    "beat_source": {"type": "string", "description": "gold:<annotator> | rule | llm:<model> | cluster"},
+    "quality": {
+      "type": "object",
+      "properties": {
+        "snr_db": {"type": ["number", "null"]},
+        "clipping_frac": {"type": ["number", "null"]},
+        "speech_frac": {"type": ["number", "null"]},
+        "music_like_frac": {"type": ["number", "null"]},
+        "teacher_sim": {"type": ["number", "null"]},
+        "align_conf": {"type": ["number", "null"]},
+        "asr_conf": {"type": ["number", "null"]},
+        "flags": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "split": {"enum": ["train", "val", "test", "unassigned"]}
+  }
+}

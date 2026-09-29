@@ -1,0 +1,97 @@
+"""Command line: `tp <command>` (or `python -m teacher_prosody.cli <command>`)."""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="tp", description="Teacher prosody research toolkit")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("analyze", help="run the analysis pipeline on a manifest of recordings")
+    a.add_argument("--manifest", required=True)
+    a.add_argument("--out", required=True)
+
+    n = sub.add_parser("normalize", help="show the spoken form of a Hinglish physics sentence")
+    n.add_argument("text")
+
+    p = sub.add_parser("plan", help="make a performance plan for a lesson script (YAML)")
+    p.add_argument("--script", required=True, help="YAML: {lesson_id, teacher_id, concept_map, beats:[{beat,text}]}")
+    p.add_argument("--profile", help="profile.json from `tp analyze`")
+    p.add_argument("--out", required=True)
+    p.add_argument("--ssml-voice", default="hi-IN-AartiNeural")
+    p.add_argument("--elevenlabs-voice", default="<VOICE_ID>")
+
+    lb = sub.add_parser("annotate", help="rule-based beat labels for sentences in a text file")
+    lb.add_argument("text_file")
+
+    d = sub.add_parser("demo", help="offline end-to-end demo on mock (espeak) audio")
+    d.add_argument("--out", default="out/demo")
+
+    lp = sub.add_parser("listening-package", help="blind stimuli for a listening test")
+    lp.add_argument("--stimuli", required=True, help="CSV with columns item,system,path")
+    lp.add_argument("--out", required=True)
+
+    la = sub.add_parser("listening-analyze", help="summarise ratings with cluster-bootstrap CIs")
+    la.add_argument("--ratings", required=True)
+    la.add_argument("--key", required=True)
+    la.add_argument("--question", default="teacher_explaining")
+
+    args = ap.parse_args(argv)
+    if args.cmd == "analyze":
+        from .pipeline import run_manifest
+
+        print(json.dumps(run_manifest(args.manifest, args.out), indent=1))
+    elif args.cmd == "normalize":
+        from .director.text_norm import normalise
+        from .preprocess.lang import cmi, tag_tokens
+
+        r = normalise(args.text)
+        print(json.dumps({"spoken": r.spoken, "formulas": [f.__dict__ for f in r.formulas],
+                          "tokens": [(t, l) for t, _, _, l in tag_tokens(args.text)], "cmi": cmi(args.text)},
+                         ensure_ascii=False, indent=1))
+    elif args.cmd == "plan":
+        import yaml
+
+        from .director.director import plan_lesson
+        from .director.render import to_elevenlabs, to_ssml
+
+        sc = yaml.safe_load(Path(args.script).read_text())
+        prof = json.loads(Path(args.profile).read_text()) if args.profile else None
+        plan = plan_lesson(sc["lesson_id"], sc.get("teacher_id", ""), sc["beats"], sc.get("concept_map"), prof, sc.get("lexicon"))
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        plan.to_json(out / "plan.json")
+        (out / "plan.ssml").write_text(to_ssml(plan, voice=args.ssml_voice))
+        (out / "elevenlabs_requests.json").write_text(json.dumps(to_elevenlabs(plan, args.elevenlabs_voice), indent=1, ensure_ascii=False))
+        print(f"wrote {out}/plan.json, plan.ssml, elevenlabs_requests.json")
+    elif args.cmd == "annotate":
+        from .pedagogy.rules import annotate, split_sentences
+
+        sents = split_sentences(Path(args.text_file).read_text(encoding="utf-8"))
+        for s, lab in zip(sents, annotate(sents)):
+            print(f"{lab.beat:20s} {lab.conf:.2f}  {s}")
+    elif args.cmd == "demo":
+        from .demo import run
+
+        print(json.dumps(run(args.out), indent=1, default=float))
+    elif args.cmd == "listening-package":
+        import csv
+
+        from .eval.listening_test import package
+
+        with open(args.stimuli) as f:
+            stim = list(csv.DictReader(f))
+        print(json.dumps(package(stim, args.out), indent=1))
+    elif args.cmd == "listening-analyze":
+        from .eval.listening_test import load_ratings, summarise
+
+        print(json.dumps(summarise(load_ratings(args.ratings, args.key), args.question), indent=1, default=float))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
