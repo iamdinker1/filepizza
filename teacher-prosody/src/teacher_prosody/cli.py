@@ -51,6 +51,16 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--strength", type=float, default=1.0)
     rs.add_argument("--match-register", action="store_true", help="also move the voice's pitch register (usually sounds processed)")
 
+    vc = sub.add_parser("convert", help="re-render a performance in the teacher's voice (kNN-VC; needs voice-cloning consent)")
+    vc.add_argument("--audio", required=True, help="source performance (TTS take or human read)")
+    vc.add_argument("--teacher-audio", required=True, help="teacher reference speech (5-30 min, clean)")
+    vc.add_argument("--model-dir", required=True, help="dir with kNN-VC code + WavLM-Large.pt + prematch_g_02500000.pt")
+    vc.add_argument("--out", required=True)
+    vc.add_argument("--consent-ref", required=True, help="id of the signed voice-cloning consent record")
+    vc.add_argument("--cache", help="where to cache the teacher matching set (.pt)")
+    vc.add_argument("--topk", type=int, default=4)
+    vc.add_argument("--transplant-intonation", action="store_true", help="impose the source's intonation at the teacher's register")
+
     d = sub.add_parser("demo", help="offline end-to-end demo on mock (espeak) audio")
     d.add_argument("--out", default="out/demo")
 
@@ -127,6 +137,25 @@ def main(argv: list[str] | None = None) -> int:
         rep = {"evaluation": ev, "edits": {k: v for k, v in edits.items() if not k.startswith("_")}}
         Path(args.out).with_suffix(".report.json").write_text(json.dumps(rep, indent=1, default=float))
         print(json.dumps(ev, indent=1, default=float))
+    elif args.cmd == "convert":
+        from .audio import load, save
+        from .synth.voice_convert import build_matching_set, convert, load_knnvc, transplant_intonation
+
+        knn = load_knnvc(args.model_dir)
+        teacher = load(args.teacher_audio)
+        m = build_matching_set(knn, teacher, cache=args.cache)
+        src = load(args.audio)
+        out = convert(knn, src, m, topk=args.topk)
+        if args.transplant_intonation:
+            from .features.f0 import extract_f0
+
+            out = transplant_intonation(out, src, extract_f0(teacher).median())
+        save(args.out, out)
+        Path(args.out).with_suffix(".provenance.json").write_text(json.dumps(
+            {"synthetic": True, "method": "kNN-VC (WavLM-Large layer 6, prematched HiFi-GAN)", "source": args.audio,
+             "teacher_reference": args.teacher_audio, "consent_ref": args.consent_ref, "topk": args.topk,
+             "intonation_transplant": args.transplant_intonation}, indent=1))
+        print(f"wrote {args.out} (SYNTHETIC voice; provenance saved next to it)")
     elif args.cmd == "demo":
         from .demo import run
 

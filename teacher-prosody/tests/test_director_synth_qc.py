@@ -139,3 +139,17 @@ def test_restyle_moves_pace_and_pauses_toward_target():
     assert ed["rate_duration_factor"] < 1.0
     rt = StyleStats.from_json(target.to_json())
     assert rt.artic_rate_sps == round(target.artic_rate_sps, 2)
+
+
+def test_transplant_intonation_moves_register_and_keeps_shape():
+    from teacher_prosody.synth.voice_convert import transplant_intonation
+    from teacher_prosody.testing import synth_voice
+
+    contour = np.concatenate([np.linspace(110, 160, 80), np.linspace(160, 105, 80)])
+    src = synth_voice(contour)                      # source performance at ~130 Hz
+    conv = synth_voice(np.full(len(contour), 200.0))  # "converted" audio, flat at 200 Hz
+    out = transplant_intonation(conv, src, target_median_hz=200.0)
+    f = extract_f0(out, floor=60, ceiling=500)
+    v = f.hz[f.voiced]
+    assert 170 < np.median(v) < 230                  # teacher register
+    assert np.ptp(12 * np.log2(v / np.median(v))) > 5  # source movement (~7 st) carried over

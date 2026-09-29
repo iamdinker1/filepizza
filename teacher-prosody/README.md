@@ -36,6 +36,7 @@ pitch, local pace, pauses, energy, emphasis, question delivery, build-up/reveal,
 | PSOLA prosody post-edit | `synth/prosody_edit.py` | yes | Imposes plan duration, F0, energy and pauses on any candidate |
 | Style restyling | `synth/restyle.py` | yes (real ElevenLabs audio) | Transcript-free: moves pace, pause distribution, accent size and rising-ending share toward a teacher's measured style; keeps words, timbre and register; reports before/after on the same units |
 | Beat stitching | `synth/stitch.py` | yes | Planned pauses, equal-power fades, loudness levelling, join diagnostics |
+| Voice conversion (Prototype B) | `synth/voice_convert.py` | yes, CPU (real audio) | kNN-VC with the teacher's recordings as the matching set; optional intonation transplant. Needs signed voice-cloning consent; outputs carry a provenance file marking them synthetic |
 | Candidate ranking and QC | `qc/rank.py` | yes (text and speaker checks need backends) | Hard gates, regeneration rules, review queue, weight calibration |
 | Objective eval | `eval/objective.py` | yes | DTW only when texts match; distribution distances otherwise |
 | Listening tests | `eval/listening_test.py` | yes | Blinded packaging; two-way cluster-bootstrap CIs; ICC; disagreements |
@@ -63,6 +64,7 @@ tp findings --audio lecture.wav --transcript lecture.asr.json --teacher rajwant_
 tp analyze --manifest manifest.yaml --out out/corpus   # many sessions (see pipeline.py for the manifest format)
 tp normalize "Force double kar diya toh a = F/m = 5 m/s^2 hoga?"
 tp restyle --audio elevenlabs.mp3 --target teacher_lecture.wav --save-target teacher_style.json --out restyled.wav
+tp convert --audio take.wav --teacher-audio teacher_30min.wav --model-dir models/knnvc --consent-ref <ID> --out take_teacher_voice.wav
 tp plan --script lesson.yaml --profile out/rajwant/profile.json --out out/plan
 tp listening-package --stimuli stimuli.csv --out out/lt
 tp listening-analyze --ratings ratings.csv --key out/lt/KEY_DO_NOT_SHARE.json
