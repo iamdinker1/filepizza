@@ -135,6 +135,42 @@ def proportional_align(text_words: list[str], audio: Audio, speech_runs: list[tu
     return words
 
 
+def nuclei_align(text_words: list[str], speech_runs: list[tuple[float, float]], nuclei_t: np.ndarray) -> list[Word]:
+    """APPROXIMATE aligner when no forced aligner is available: map each word's syllables onto
+    detected syllable nuclei (intensity peaks) in order, so local tempo and pauses shape the timing.
+
+    Word i spans from the midpoint before its first syllable's nucleus to the midpoint after its
+    last. Falls back to `proportional_align` if nuclei and syllable counts disagree by > 40%.
+    Confidence 0.45 (vs 0.3 for proportional): usable for utterance/phrase-level analysis and
+    rough word prominence, not for phone-level claims. Replace with MFA when available.
+    """
+    if not text_words or not speech_runs:
+        return []
+    syl = [max(1, syllable_count(w)) for w in text_words]
+    total = sum(syl)
+    t0, t1 = speech_runs[0][0], speech_runs[-1][1]
+    nuc = np.sort(nuclei_t[(nuclei_t >= t0) & (nuclei_t <= t1)])
+    if len(nuc) < 2 or not (0.6 * total <= len(nuc) <= 1.4 * total):
+        return proportional_align(text_words, None, speech_runs)
+    # syllable index -> nucleus time via linear resampling of the nuclei sequence
+    pos = np.linspace(0, len(nuc) - 1, total)
+    syl_t = np.interp(pos, np.arange(len(nuc)), nuc)
+    edges = np.concatenate([[t0], (syl_t[:-1] + syl_t[1:]) / 2, [t1]])
+    # never let a boundary sit inside a speech run's silence gap: snap to the gap edge nearest in time
+    gaps = [(a[1], b[0]) for a, b in zip(speech_runs[:-1], speech_runs[1:]) if b[0] - a[1] > 0.12]
+    words, k = [], 0
+    for w, n in zip(text_words, syl):
+        a, b = edges[k], edges[k + n]
+        for g0, g1 in gaps:
+            if g0 < a < g1:
+                a = g1
+            if g0 < b < g1:
+                b = g0
+        words.append(Word(w=w, start=float(a), end=float(max(b, a + 0.03)), conf=0.45))
+        k += n
+    return words
+
+
 # ------------------------------------------------------------------ diarization / speaker similarity
 
 class PyannoteDiarizer:
@@ -174,3 +210,99 @@ class SpeakerEmbedder:
         from .quality import mfcc_embedding
 
         return mfcc_embedding(audio)
+
+
+class SherpaWhisperASR:
+    """Whisper (ONNX, int8) via sherpa-onnx with Silero VAD chunking. Runs on CPU with models from
+    GitHub releases (k2-fsa/sherpa-onnx `asr-models`), so it works where huggingface.co is blocked.
+
+    Verified in the build sandbox on the 30-min Rajwant Sir sample: ~0.6x real time on 4 CPUs
+    (whisper-turbo int8). Hindi mode keeps English physics terms in Latin script and Hindi in
+    Devanagari. sherpa-onnx decodes each BPE token to text on its own and drops partial UTF-8
+    bytes (broken Devanagari), so `hexify_tokens` rewrites the token table to emit hex bytes that
+    are re-assembled and decoded here. No word timestamps: pair with an aligner.
+    """
+
+    def __init__(self, model_dir: str, vad_model: str, language: str = "hi", num_threads: int = 4,
+                 prefix: str = "turbo", max_chunk_s: float = 20.0, min_silence_s: float = 0.35):
+        import sherpa_onnx
+
+        d = Path(model_dir)
+        hex_tokens = d / f"{prefix}-tokens-hex.txt"
+        if not hex_tokens.exists():
+            hexify_tokens(d / f"{prefix}-tokens.txt", hex_tokens)
+        self.rec = sherpa_onnx.OfflineRecognizer.from_whisper(
+            encoder=str(d / f"{prefix}-encoder.int8.onnx"), decoder=str(d / f"{prefix}-decoder.int8.onnx"),
+            tokens=str(hex_tokens), language=language, task="transcribe", num_threads=num_threads)
+        cfg = sherpa_onnx.VadModelConfig()
+        cfg.silero_vad.model = vad_model
+        cfg.silero_vad.min_silence_duration = min_silence_s
+        cfg.silero_vad.min_speech_duration = 0.25
+        cfg.silero_vad.max_speech_duration = max_chunk_s
+        cfg.sample_rate = 16000
+        self.vad_cfg = cfg
+
+    def chunks(self, audio: Audio) -> list[tuple[float, np.ndarray]]:
+        import sherpa_onnx
+
+        assert audio.sr == 16000, "resample to 16 kHz first"
+        vad = sherpa_onnx.VoiceActivityDetector(self.vad_cfg, buffer_size_in_seconds=60)
+        win = self.vad_cfg.silero_vad.window_size
+        out = []
+        y = audio.y
+        for i in range(0, len(y), win):
+            vad.accept_waveform(y[i:i + win])
+            while not vad.empty():
+                out.append((vad.front.start / 16000, np.asarray(vad.front.samples, dtype=np.float32)))
+                vad.pop()
+        vad.flush()
+        while not vad.empty():
+            out.append((vad.front.start / 16000, np.asarray(vad.front.samples, dtype=np.float32)))
+            vad.pop()
+        return out
+
+    def decode(self, samples: np.ndarray) -> str:
+        s = self.rec.create_stream()
+        s.accept_waveform(16000, samples)
+        self.rec.decode_stream(s)
+        raw = bytes.fromhex("".join(re.findall(r"\{([0-9a-f]*)\}", s.result.text)))
+        return raw.decode("utf-8", errors="ignore").strip()
+
+    def merged_chunks(self, audio: Audio, max_window_s: float = 28.0) -> list[tuple[float, np.ndarray]]:
+        """Merge neighbouring VAD chunks into windows <= max_window_s. Whisper's encoder always pays
+        for a 30 s window, so many short calls are slow, and very short chunks decode poorly."""
+        spans = [(t0, t0 + len(x) / 16000) for t0, x in self.chunks(audio)]
+        merged: list[list[float]] = []
+        for a, b in spans:
+            if merged and b - merged[-1][0] <= max_window_s:
+                merged[-1][1] = b
+            else:
+                merged.append([a, b])
+        return [(a, audio.y[int(a * 16000):int(b * 16000)]) for a, b in merged]
+
+    def transcribe(self, audio: Audio, progress: bool = False) -> list[AsrSegment]:
+        out = []
+        chunks = self.merged_chunks(audio)
+        for k, (t0, samples) in enumerate(chunks):
+            text = self.decode(samples)
+            out.append(AsrSegment(t0, t0 + len(samples) / 16000, text, []))
+            if progress and k % 5 == 0:
+                print(f"  asr chunk {k + 1}/{len(chunks)} @ {t0 / 60:.1f} min: {text[:60]}", flush=True)
+        return out
+
+
+def hexify_tokens(src: str | Path, dst: str | Path) -> None:
+    import base64
+
+    lines = []
+    for line in Path(src).read_text(encoding="utf-8").splitlines():
+        parts = line.split(" ")
+        if len(parts) == 2:
+            try:
+                raw = base64.b64decode(parts[0])
+                lines.append(base64.b64encode(("{" + raw.hex() + "}").encode()).decode() + " " + parts[1])
+                continue
+            except Exception:
+                pass
+        lines.append(line)
+    Path(dst).write_text("\n".join(lines) + "\n", encoding="utf-8")

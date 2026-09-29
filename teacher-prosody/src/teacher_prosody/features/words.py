@@ -77,10 +77,18 @@ def word_prosody(words, f0: F0Track, energy: EnergyTrack, ref_hz: float, syl_dur
         seg = st[m]
         v = seg[np.isfinite(seg)]
         tt = f0.times[m][np.isfinite(seg)]
-        bm = f0.slice_mask(w.start - baseline_win, w.end + baseline_win)
-        base_v = st[bm]
-        base_v = base_v[np.isfinite(base_v)]
-        base = float(np.median(base_v)) if base_v.size else np.nan
+        # local baseline follows the declination trend (phrase-initial words are high anyway, so a flat
+        # median would make them look prominent): robust line through the window, evaluated at the word
+        bm = f0.slice_mask(w.start - baseline_win, w.end + baseline_win) & np.isfinite(st)
+        tb, sb = f0.times[bm], st[bm]
+        if sb.size >= 10 and np.ptp(tb) > 0.3:
+            coef = np.polyfit(tb, sb, 1)
+            resid = sb - np.polyval(coef, tb)
+            keep = np.abs(resid) <= np.percentile(np.abs(resid), 80)  # drop accent peaks from the fit
+            coef = np.polyfit(tb[keep], sb[keep], 1) if keep.sum() >= 5 else coef
+            base = float(np.polyval(coef, (w.start + w.end) / 2))
+        else:
+            base = float(np.median(sb)) if sb.size else np.nan
         f0_mean = float(np.mean(v)) if v.size else np.nan
         f0_max = float(np.percentile(v, 95)) if v.size else np.nan
         slope = float(np.polyfit(tt, v, 1)[0]) if v.size >= 4 and tt[-1] > tt[0] else np.nan

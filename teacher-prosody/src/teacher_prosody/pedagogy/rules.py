@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..preprocess.lang import is_question_text, phonetic_key
 from .taxonomy import load_taxonomy
 
 
@@ -33,19 +34,24 @@ def annotate(sentences: list[str]) -> list[BeatLabel]:
     out: list[BeatLabel] = []
     for i, s in enumerate(sentences):
         low = _norm(s)
+        key = phonetic_key(s)  # Devanagari transliterated; romanised spellings unified
         hits: dict[str, list[str]] = {}
         for name, spec in beats.items():
             for cue in spec.get("cues", []):
                 c = cue.lower()
-                pat = re.escape(c) if not c[0].isalnum() else r"(?<![\w])" + re.escape(c) + r"(?![\w])"
-                if re.search(pat, low):
+                if not c[0].isalnum():
+                    found = c in low
+                else:
+                    ck = phonetic_key(c)
+                    found = bool(re.search(r"(?<![\w])" + re.escape(ck) + r"(?![\w])", key))
+                if found:
                     hits.setdefault(name, []).append(cue)
-        if low.endswith("?"):
-            hits.setdefault("rhetorical_question", []).append("?")
+        if is_question_text(s):
+            hits.setdefault("rhetorical_question", []).append("question form")
         if re.search(r"[=∝]", s):
             hits.setdefault("formula", []).append("equation")
         prev = sentences[i - 1].strip() if i > 0 else ""
-        if prev.endswith("?") and not low.endswith("?"):
+        if prev and is_question_text(prev) and not is_question_text(s):
             hits.setdefault("reveal", []).append("follows question")
         for j in range(max(0, i - 3), i):
             a, b = _tokens(s), _tokens(sentences[j])

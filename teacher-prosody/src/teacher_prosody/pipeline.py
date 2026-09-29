@@ -27,7 +27,7 @@ from .analyze import analyze_recording, analyze_utterance
 from .audio import Audio
 from .dashboard import report
 from .pedagogy.rules import annotate
-from .preprocess.backends import proportional_align, read_captions, read_textgrid
+from .preprocess.backends import nuclei_align, read_captions, read_textgrid
 from .preprocess.ingest import ingest, segment_at_pauses
 from .preprocess.lang import lang_spans, word_langs
 from .preprocess.quality import assess
@@ -84,12 +84,15 @@ def utterances_for_recording(rec, audio: Audio, rf, transcript: str | None) -> l
             utts.append(Utterance(utt_id=f"{rec.recording_id}_{gi:04d}", start=g[0].start, end=g[-1].end, text=text,
                                   words=g, **base))
     elif transcript:
-        segs = read_captions(transcript)
-        for gi, s in enumerate(segs):
-            toks = s.text.split()
-            words = proportional_align(toks, audio, _speech_runs(rf, s.start, s.end))
-            utts.append(Utterance(utt_id=f"{rec.recording_id}_{gi:04d}", start=s.start, end=s.end, text_asr=s.text,
-                                  text=s.text, words=words, **base))
+        # captions / ASR windows: align words inside each window, then regroup into pause-delimited
+        # utterances so utterance boundaries come from the teacher's pauses, not from ASR chunking
+        all_words: list[Word] = []
+        for s in read_captions(transcript):
+            all_words += nuclei_align(s.text.split(), _speech_runs(rf, s.start, s.end), rf.nuclei.times)
+        for gi, g in enumerate(_group_words(all_words)):
+            text = " ".join(w.w for w in g)
+            utts.append(Utterance(utt_id=f"{rec.recording_id}_{gi:04d}", start=g[0].start, end=g[-1].end, text_asr=text,
+                                  text=text, words=g, **base))
     else:
         for gi, s in enumerate(segment_at_pauses(audio)):
             utts.append(Utterance(utt_id=f"{rec.recording_id}_{gi:04d}", start=s.start, end=s.end, **base))

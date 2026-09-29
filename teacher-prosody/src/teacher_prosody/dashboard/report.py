@@ -87,7 +87,7 @@ def pause_plot(pauses_by_kind: dict[str, list[float]]) -> str:
     kinds = [k for k, v in pauses_by_kind.items() if v]
     fig, ax = plt.subplots(figsize=(8, 0.45 * max(3, len(kinds)) + 0.8))
     if kinds:
-        ax.boxplot([pauses_by_kind[k] for k in kinds], vert=False, tick_labels=kinds, showfliers=True)
+        ax.boxplot([pauses_by_kind[k] for k in kinds], orientation="horizontal", tick_labels=kinds, showfliers=True)
     ax.set_xlabel("pause duration (s)")
     fig.tight_layout()
     return _png(fig)

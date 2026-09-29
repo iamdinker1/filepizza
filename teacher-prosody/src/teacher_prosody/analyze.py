@@ -15,7 +15,7 @@ from .features.f0 import F0Track, extract_f0, f0_stats, final_contour
 from .features.pauses import Pause, classify_pauses, pause_distribution, pauses_from_mask, pauses_from_words
 from .features.rate import Nuclei, local_rate_curve, syllable_nuclei, words_rate
 from .features.words import WordProsody, word_prosody
-from .preprocess.lang import cmi, word_langs
+from .preprocess.lang import cmi, is_question_text, word_langs
 from .schema import Utterance
 
 
@@ -86,7 +86,8 @@ def analyze_utterance(u: Utterance, rf: RecordingFeatures, question_rise_st: flo
         "beat": u.beat,
         "text": u.text,
         "cmi": cmi(u.text) if u.text else 0.0,
-        "is_question": u.text.strip().endswith("?") or fin.get("final_type") == "rise" and fin.get("final_delta_st", 0) > question_rise_st,
+        "is_question_text": bool(u.text) and is_question_text(u.text),
+        "is_question": (bool(u.text) and is_question_text(u.text)) or (not u.text and fin.get("final_type") == "rise"),
     }
     rows: list[WordProsody] = []
     pauses: list[Pause] = []

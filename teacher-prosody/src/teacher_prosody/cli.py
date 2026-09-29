@@ -28,6 +28,20 @@ def main(argv: list[str] | None = None) -> int:
     lb = sub.add_parser("annotate", help="rule-based beat labels for sentences in a text file")
     lb.add_argument("text_file")
 
+    fd = sub.add_parser("findings", help="teacher findings report from one recording + transcript")
+    fd.add_argument("--audio", required=True)
+    fd.add_argument("--transcript", required=True, help="ASR/caption JSON [{start,end,text}], SRT/VTT, or MFA TextGrid")
+    fd.add_argument("--teacher", required=True)
+    fd.add_argument("--out", required=True)
+    fd.add_argument("--consent-ref", default="")
+
+    tr = sub.add_parser("transcribe", help="Whisper (sherpa-onnx, CPU) transcription to JSON windows")
+    tr.add_argument("--audio", required=True)
+    tr.add_argument("--model-dir", required=True, help="dir with <prefix>-encoder/decoder.int8.onnx + tokens")
+    tr.add_argument("--vad", required=True, help="silero_vad.onnx")
+    tr.add_argument("--language", default="hi")
+    tr.add_argument("--out", required=True)
+
     d = sub.add_parser("demo", help="offline end-to-end demo on mock (espeak) audio")
     d.add_argument("--out", default="out/demo")
 
@@ -74,6 +88,19 @@ def main(argv: list[str] | None = None) -> int:
         sents = split_sentences(Path(args.text_file).read_text(encoding="utf-8"))
         for s, lab in zip(sents, annotate(sents)):
             print(f"{lab.beat:20s} {lab.conf:.2f}  {s}")
+    elif args.cmd == "findings":
+        from .findings import teacher_findings
+
+        F = teacher_findings(args.audio, args.transcript, args.out, args.teacher, consent_ref=args.consent_ref)
+        print(json.dumps({k: F[k] for k in ("minutes", "n_utterances", "voice", "questions")}, indent=1, default=float, ensure_ascii=False))
+    elif args.cmd == "transcribe":
+        from .audio import load
+        from .preprocess.backends import SherpaWhisperASR
+
+        asr = SherpaWhisperASR(args.model_dir, args.vad, language=args.language)
+        segs = asr.transcribe(load(args.audio), progress=True)
+        Path(args.out).write_text(json.dumps([{"start": s.start, "end": s.end, "text": s.text} for s in segs],
+                                             ensure_ascii=False, indent=1), encoding="utf-8")
     elif args.cmd == "demo":
         from .demo import run
 

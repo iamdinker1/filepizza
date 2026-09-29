@@ -43,3 +43,4 @@ teacher_prosody = ["data/*.yaml", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: end-to-end demo run (~20 s)"]

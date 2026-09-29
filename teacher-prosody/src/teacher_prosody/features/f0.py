@@ -118,7 +118,7 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)))
 
 
-def correct_octave_errors(hz: np.ndarray, win: int = 51, tol_st: float = 3.0, jump_st: float = 7.0):
+def correct_octave_errors(hz: np.ndarray, win: int = 201, tol_st: float = 3.0, jump_st: float = 7.0):
     """Fold back halving/doubling errors without flattening real pitch accents.
 
     A run of frames ~+/-12 st away from the local voiced median is treated as an octave error
