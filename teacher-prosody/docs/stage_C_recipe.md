@@ -1,6 +1,6 @@
 # Stage C: listener-preferred voice conversion (29 Sep 2026)
 
-Code: tag `stage-c-voice-conversion` (commit a9da714). Outputs are **synthetic** speech in the
+Code: commit `a9da714` on branch `claude/quirky-dirac-fwub06`. Outputs are **synthetic** speech in the
 teacher's voice. They were made under the teacher's confirmed consent for internal R&D voice conversion, and
 are kept outside this repository together with a provenance file (`STAGE_C_PROVENANCE.json`, with checksums).
 
