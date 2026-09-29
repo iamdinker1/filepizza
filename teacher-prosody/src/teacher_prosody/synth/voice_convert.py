@@ -161,3 +161,34 @@ def transplant_intonation(converted: Audio, source: Audio, target_median_hz: flo
     y = np.asarray(out.values[0], dtype=np.float32)
     peak = float(np.max(np.abs(y))) if y.size else 1.0
     return Audio((y / peak * 0.98 if peak > 0.98 else y).astype(np.float32), converted.sr)
+
+
+def restore_high_band(converted: Audio, source_hi: Audio, crossover_hz: float = 6000.0, hf_gain_db: float = -2.0,
+                      presence_db: float = 1.5) -> Audio:
+    """Clarity fix for 16 kHz kNN-VC output: upsample to the source's rate and add back the source's
+    band above `crossover_hz` (sibilants, bursts: the crispness that carries clarity but little speaker
+    identity). Requires `converted` to be sample-aligned with `source_hi` (true for `convert`).
+    A gentle presence lift (~3 kHz) on the converted band restores consonant definition."""
+    from math import gcd
+
+    from scipy.signal import butter, resample_poly, sosfiltfilt
+
+    sr = source_hi.sr
+    g = gcd(converted.sr, sr)
+    lo = resample_poly(converted.y.astype(np.float64), sr // g, converted.sr // g)
+    n = min(len(lo), len(source_hi.y))
+    lo, hi_src = lo[:n], source_hi.y[:n].astype(np.float64)
+    lo = sosfiltfilt(butter(8, crossover_hz, "lowpass", fs=sr, output="sos"), lo)
+    if presence_db:
+        band = sosfiltfilt(butter(2, [2000, 4500], "bandpass", fs=sr, output="sos"), lo)
+        lo = lo + (10 ** (presence_db / 20) - 1) * band
+    hi = sosfiltfilt(butter(8, crossover_hz, "highpass", fs=sr, output="sos"), hi_src)
+    # match the high band's level to the converted audio's overall level change
+    rms = lambda x: np.sqrt(np.mean(x ** 2) + 1e-12)
+    lo_full = resample_poly(converted.y.astype(np.float64), sr // g, converted.sr // g)[:n]
+    hi *= (rms(lo_full) / rms(hi_src)) * 10 ** (hf_gain_db / 20)
+    y = lo + hi
+    peak = float(np.max(np.abs(y)))
+    if peak > 0.98:
+        y = y / peak * 0.98
+    return Audio(y.astype(np.float32), sr)
