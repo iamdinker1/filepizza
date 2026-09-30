@@ -1,0 +1,36 @@
+# VoxCPM2 LoRA for the teacher-style converter. Pilot (Rajwant Sir, 22 min / 145 train sentences) on 4 CPUs:
+# ~84 s per step with the CPU wrapper and its allocator settings (scripts/train_voxcpm_lora_cpu.py), 200
+# steps ~4.5 h; that is ~800 samples vs ~16,000 in the upstream LoRA recipe, so treat CPU runs as pilots. On a GPU, run
+# the upstream script directly and raise batch_size. max_steps sets the LR schedule; num_iters stops early
+# (resume by raising num_iters: training restarts from save_path/latest).
+pretrained_path: models/VoxCPM2/
+train_manifest: out/style_dataset/train.jsonl
+val_manifest: null
+sample_rate: 16000
+out_sample_rate: 48000
+batch_size: 1
+grad_accum_steps: 4
+num_workers: 0
+preprocessing_num_workers: 1
+num_iters: 200
+log_interval: 5
+valid_interval: 100000
+save_interval: 10
+learning_rate: 0.0001
+weight_decay: 0.01
+warmup_steps: 20
+max_steps: 400
+max_batch_tokens: 0
+max_grad_norm: 1.0
+save_path: out/style_lora
+tensorboard: out/style_lora/tb
+lambdas:
+  loss/diff: 1.0
+  loss/stop: 1.0
+lora:
+  enable_lm: true
+  enable_dit: true
+  enable_proj: false
+  r: 32
+  alpha: 32
+  dropout: 0.0

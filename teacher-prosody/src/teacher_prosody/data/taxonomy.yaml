@@ -1,0 +1,79 @@
+# Pedagogical beat taxonomy v0 - a starting point to be REVISED from data
+# (merge beats that annotators cannot tell apart, split ones that hide two prosodic behaviours).
+# Each beat: definition, typical text cues (Hinglish), and the prosodic hypothesis to test.
+beats:
+  hook:
+    definition: Opening line that creates curiosity or stakes before the concept.
+    cues: ["kabhi socha", "ever wondered", "aaj ek mazedaar", "imagine", "kya aap jaante"]
+    prosody_hypothesis: wide F0 range, higher energy, moderate rate
+  introduce_concept:
+    definition: Names the new idea the lesson turns to.
+    cues: ["aaj hum", "today we", "naya concept", "ab baat karte", "let us understand", "pehle samajhte"]
+    prosody_hypothesis: energy reset upward, slower on the concept name, pause before the term
+  definition:
+    definition: States what a term means.
+    cues: ["ko kehte hain", "kehlata hai", "is defined as", "defined as", "definition", "matlab hota hai", "means"]
+    prosody_hypothesis: slower, even rhythm, emphasis on the defining words
+  explanation:
+    definition: Default expository speech that develops the idea.
+    cues: []
+    prosody_hypothesis: teacher's baseline register
+  build_up:
+    definition: Sets up a conclusion step by step, creating anticipation.
+    cues: ["ab socho", "dhyan se dekho", "dhyaan se", "what if", "agar", "suppose karo", "ab yahan pe"]
+    prosody_hypothesis: accelerating or steady rate, rising energy, then a pre-reveal slowdown / pause
+  rhetorical_question:
+    definition: Question the teacher asks and answers themself (Socratic setup).
+    cues: ["kya hoga", "kya lagta", "kyun", "kaise", "what happens", "why", "bata sakte", "socho zara"]
+    prosody_hypothesis: rising or high final contour (Hinglish kya-questions may fall), then a rhetorical pause
+  reveal:
+    definition: Delivers the answer / key insight after a question or build-up.
+    cues: ["yahi hai", "toh answer", "that's why", "isliye", "yahi reason", "dekha", "ho gaya", "so the answer", "answer hai"]
+    prosody_hypothesis: preceded by a pause, slower, focal F0 peak or low emphatic fall on the key word
+  example:
+    definition: Concrete instance or analogy.
+    cues: ["example", "jaise", "maan lo", "for instance", "for example", "sochiye ek", "real life"]
+    prosody_hypothesis: lighter, faster, more conversational
+  formula:
+    definition: States or reads an equation.
+    cues: ["=", "formula", "equation", "barabar"]
+    prosody_hypothesis: slow, syllable-timed, each symbol separated; pronunciation must be exact
+  derivation_step:
+    definition: One algebraic/logical step of a derivation.
+    cues: ["differentiate", "integrate", "substitute", "put karo", "rakh do", "dono side", "cancel", "simplify", "divide"]
+    prosody_hypothesis: steady, low-variance pace; micro-pauses between steps
+  numerical_step:
+    definition: Plugging numbers, computing values.
+    cues: ["calculate", "value", "nikalo", "nikaal", "into", "multiply", "units"]
+    prosody_hypothesis: number emphasis, deliberate pace
+  warning:
+    definition: Flags something important to remember or be careful about.
+    cues: ["dhyan rakhna", "dhyaan rakhna", "yaad rakhna", "important", "careful", "note karo", "hamesha"]
+    prosody_hypothesis: slower, louder, lower pitch or strong focal accent on the warned item
+  common_mistake:
+    definition: Names a mistake students typically make.
+    cues: ["galti", "mistake", "confuse", "mat karna", "trap", "students yahan", "log yahan", "galat"]
+    prosody_hypothesis: contrastive emphasis on the wrong vs right item, pre-emphasis pause
+  recap:
+    definition: Summarises what was covered.
+    cues: ["recap", "summary", "ab tak humne", "to conclude", "revise", "toh total", "in short"]
+    prosody_hypothesis: faster, lower energy, list intonation
+  transition:
+    definition: Moves to the next part.
+    cues: ["chalo", "next", "aage badhte", "moving on", "agla", "ab chalte", "let's move"]
+    prosody_hypothesis: energy reset, F0 reset upward after a boundary pause
+  repetition:
+    definition: Re-says a recent key sentence for retention.
+    cues: []
+    prosody_hypothesis: slower than the first saying, stronger emphasis
+  encouragement:
+    definition: Motivates or reassures the student.
+    cues: ["bahut badhiya", "shabash", "very good", "great", "tension mat", "easy hai", "aap kar sakte", "don't worry", "ho jayega"]
+    prosody_hypothesis: warm, higher F0, smiling voice quality
+  aside:
+    definition: Off-topic remark, admin, jokes, or filler.
+    cues: ["by the way", "waise", "chat mein", "comment"]
+    prosody_hypothesis: fast, low energy
+# resolution order when several beats' cues match (earlier wins)
+priority: [common_mistake, warning, rhetorical_question, reveal, definition, formula, derivation_step, numerical_step,
+           recap, transition, introduce_concept, hook, example, encouragement, build_up, aside, explanation]

@@ -1,0 +1,15 @@
+# Exact versions the CPU pipeline and test suite were verified with (Python 3.11.15, Linux x86_64).
+imageio-ffmpeg==0.6.0
+jiwer==4.0.0
+jsonschema==4.26.0
+librosa==0.11.0
+matplotlib==3.11.2
+numpy==2.4.6
+praat-parselmouth==0.4.7
+pyloudnorm==0.2.0
+pytest==9.1.1
+PyYAML==6.0.3
+scikit-learn==1.9.1
+scipy==1.17.1
+soundfile==0.14.0
+wordfreq==3.1.1
