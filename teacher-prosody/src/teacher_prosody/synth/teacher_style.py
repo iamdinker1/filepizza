@@ -115,7 +115,11 @@ class TeacherStyleConverter:
         return " ".join(s.text for s in self.asr.transcribe(Audio(y16, 16000)))
 
     def render(self, sentences: list[str], reference_wav: str | None = None, max_tries: int = 3,
-               cer_ok: float = 0.12, cfg_value: float = 2.0, timesteps: int = 10) -> tuple[list[np.ndarray], ConvertReport]:
+               cer_ok: float = 0.12, cfg_value: float = 2.0, timesteps: int = 10, prompt_wav: str | None = None,
+               prompt_text: str | None = None) -> tuple[list[np.ndarray], ConvertReport]:
+        """`reference_wav` sets the timbre only. `prompt_wav` + `prompt_text` (a clip of teacher delivery in
+        the target voice and its exact transcript) make VoxCPM2 continue from that clip, carrying its rhythm
+        and style as well: the no-training variant of the converter."""
         from ..preprocess.lang import phonetic_key
         from ..qc.rank import cer
 
@@ -123,8 +127,8 @@ class TeacherStyleConverter:
         for sent in sentences:
             best = None
             for k in range(1, max_tries + 1):
-                y = self.model.generate(text=sent, reference_wav_path=reference_wav, cfg_value=cfg_value,
-                                        inference_timesteps=timesteps)
+                y = self.model.generate(text=sent, reference_wav_path=reference_wav, prompt_wav_path=prompt_wav,
+                                        prompt_text=prompt_text, cfg_value=cfg_value, inference_timesteps=timesteps)
                 if self.asr is None:
                     best = (y, None, "", k)
                     break

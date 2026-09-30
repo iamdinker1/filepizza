@@ -75,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     ts.add_argument("--base-model", required=True, help="local VoxCPM2 directory")
     ts.add_argument("--lora", help="LoRA checkpoint directory from the style fine-tune")
     ts.add_argument("--reference", help="optional timbre reference clip of the target voice")
+    ts.add_argument("--prompt-wav", help="clip of teacher delivery in the target voice to continue from (no-training mode)")
+    ts.add_argument("--prompt-text", help="exact transcript of --prompt-wav")
     ts.add_argument("--asr-model-dir", help="sherpa-onnx whisper dir, for the per-sentence word check")
     ts.add_argument("--vad", help="silero_vad.onnx (with --asr-model-dir)")
     ts.add_argument("--max-tries", type=int, default=3)
@@ -225,11 +227,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             raise SystemExit("give --script, or --audio with --asr-model-dir/--vad to transcribe it")
         conv = TeacherStyleConverter(args.base_model, args.lora, asr=asr)
-        out, rep = conv.convert(script, args.reference, max_tries=args.max_tries)
+        out, rep = conv.convert(script, args.reference, max_tries=args.max_tries, prompt_wav=args.prompt_wav,
+                                prompt_text=args.prompt_text)
         save(args.out, out)
         summary = rep.summary()
         Path(args.out).with_suffix(".provenance.json").write_text(json.dumps(
-            {"synthetic": True, "method": "VoxCPM2 + teacher-style LoRA", "source_take": args.audio, "lora": args.lora,
+            {"synthetic": True, "method": "VoxCPM2 + teacher-style LoRA and/or prompt continuation", "source_take": args.audio,
+             "lora": args.lora, "prompt_wav": args.prompt_wav,
              "consent_ref": args.consent_ref, "script": script, "qc": summary,
              "sentences": [vars(s) for s in rep.sentences]}, ensure_ascii=False, indent=1))
         print(json.dumps(summary, ensure_ascii=False, indent=1))
