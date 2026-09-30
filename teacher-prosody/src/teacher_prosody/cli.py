@@ -60,6 +60,27 @@ def main(argv: list[str] | None = None) -> int:
     hz.add_argument("--strength", type=float, help="default: the profile's calibrated strength, else 1.0")
     hz.add_argument("--calibrate", action="store_true", help="search the strength on the first input (<=200 s) and store it in --save-teacher")
 
+    sd = sub.add_parser("style-dataset", help="fine-tuning set: teacher lectures re-voiced into the target voice (needs consent)")
+    sd.add_argument("--teacher-audio", required=True, nargs="+", help="teacher lecture recordings")
+    sd.add_argument("--target-voice", required=True, help="clean audio of the target voice (e.g. 10+ min of Bunty TTS)")
+    sd.add_argument("--knn-model-dir", required=True)
+    sd.add_argument("--asr-model-dir", required=True)
+    sd.add_argument("--vad", required=True)
+    sd.add_argument("--consent-ref", required=True, help="id of the teacher's signed consent record covering TTS training")
+    sd.add_argument("--out", required=True)
+
+    ts = sub.add_parser("teacher-style", help="re-speak a TTS take with a teacher's delivery in the same voice (VoxCPM2 + LoRA)")
+    ts.add_argument("--audio", help="the TTS take; transcribed when --script is not given")
+    ts.add_argument("--script", help="text file with the take's script (preferred: exact words)")
+    ts.add_argument("--base-model", required=True, help="local VoxCPM2 directory")
+    ts.add_argument("--lora", help="LoRA checkpoint directory from the style fine-tune")
+    ts.add_argument("--reference", help="optional timbre reference clip of the target voice")
+    ts.add_argument("--asr-model-dir", help="sherpa-onnx whisper dir, for the per-sentence word check")
+    ts.add_argument("--vad", help="silero_vad.onnx (with --asr-model-dir)")
+    ts.add_argument("--max-tries", type=int, default=3)
+    ts.add_argument("--consent-ref", required=True, help="consent record id of the teacher whose delivery the LoRA learned")
+    ts.add_argument("--out", required=True)
+
     vc = sub.add_parser("convert", help="re-render a performance in the teacher's voice (kNN-VC; needs voice-cloning consent)")
     vc.add_argument("--audio", required=True, help="source performance (TTS take or human read)")
     vc.add_argument("--teacher-audio", required=True, help="teacher reference speech (5-30 min, clean)")
@@ -175,6 +196,43 @@ def main(argv: list[str] | None = None) -> int:
                    "teacher": prof["dynamics"]}
             dst.with_suffix(".report.json").write_text(json.dumps(rep, indent=1, default=float))
             print(f"{f.name} -> {dst} ({log['duration_in_s']} s -> {log['duration_out_s']} s)")
+    elif args.cmd == "style-dataset":
+        from .audio import concat, load
+        from .preprocess.backends import SherpaWhisperASR
+        from .synth.teacher_style import build_training_set
+        from .synth.voice_convert import load_knnvc
+
+        teacher = concat([load(p) for p in args.teacher_audio])
+        rep = build_training_set(teacher, load(args.target_voice), load_knnvc(args.knn_model_dir),
+                                 SherpaWhisperASR(args.asr_model_dir, args.vad), args.out)
+        rep.update({"synthetic": True, "consent_ref": args.consent_ref, "teacher_audio": args.teacher_audio,
+                    "target_voice": args.target_voice})
+        Path(args.out, "provenance.json").write_text(json.dumps(rep, indent=1))
+        print(json.dumps(rep, indent=1))
+    elif args.cmd == "teacher-style":
+        from .audio import load, save
+        from .synth.teacher_style import TeacherStyleConverter
+
+        asr = None
+        if args.asr_model_dir:
+            from .preprocess.backends import SherpaWhisperASR
+
+            asr = SherpaWhisperASR(args.asr_model_dir, args.vad)
+        if args.script:
+            script = Path(args.script).read_text(encoding="utf-8")
+        elif args.audio and asr is not None:
+            script = " ".join(s.text for s in asr.transcribe(load(args.audio)))
+        else:
+            raise SystemExit("give --script, or --audio with --asr-model-dir/--vad to transcribe it")
+        conv = TeacherStyleConverter(args.base_model, args.lora, asr=asr)
+        out, rep = conv.convert(script, args.reference, max_tries=args.max_tries)
+        save(args.out, out)
+        summary = rep.summary()
+        Path(args.out).with_suffix(".provenance.json").write_text(json.dumps(
+            {"synthetic": True, "method": "VoxCPM2 + teacher-style LoRA", "source_take": args.audio, "lora": args.lora,
+             "consent_ref": args.consent_ref, "script": script, "qc": summary,
+             "sentences": [vars(s) for s in rep.sentences]}, ensure_ascii=False, indent=1))
+        print(json.dumps(summary, ensure_ascii=False, indent=1))
     elif args.cmd == "convert":
         from .audio import load, save
         from .synth.voice_convert import build_matching_set, convert, load_knnvc, transplant_intonation

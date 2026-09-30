@@ -196,3 +196,18 @@ def test_humanize_adds_teacher_dynamics_and_keeps_rate():
     fast, log = humanize(src, None, HumanizeParams(strength=1.0), teacher_rate=before["artic_rate_sps"] * 1.12)
     assert log["speech_duration_factor"] < 0.92            # speech sped up to the teacher's pace ...
     assert fast.duration < out.duration                    # ... on top of the same dynamics
+
+
+def test_teacher_style_script_split_and_join():
+    from teacher_prosody.synth.teacher_style import join, pause_after, split_script
+
+    script = ("अच्छा बेटा, आओ आज एक छोटा सा काम साथ में करते हैं। ज़रा सोचो! अगर force को double कर दिया, "
+              "तो acceleration कितना होगा? " + "बहुत लंबा वाक्य, " * 20 + "खत्म।")
+    sents = split_script(script, max_chars=80)
+    assert sents[0].endswith("।") and sents[1] == "ज़रा सोचो!" and sents[2].endswith("होगा?")
+    assert all(len(s) <= 80 for s in sents)
+    assert "".join(sents).replace(" ", "") == script.replace(" ", "")  # nothing lost or duplicated
+    assert pause_after("होगा?") > pause_after("हैं।") > pause_after("देखो,")
+    sr = 1000
+    y = join([np.ones(100, np.float32), np.ones(50, np.float32)], ["क्या?", "हाँ।"], sr)
+    assert len(y) == 100 + int(0.8 * sr) + 50  # question pause between, no trailing pause

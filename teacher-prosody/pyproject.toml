@@ -31,6 +31,7 @@ align = ["torch>=2.3", "torchaudio>=2.3", "uroman>=1.3"]
 diarize = ["pyannote.audio>=3.3"]
 tts = ["requests>=2.31"]
 vc = ["torch>=2.3", "torchaudio>=2.3"]
+style = ["voxcpm>=2.0", "argbind", "tensorboardX", "datasets"]  # teacher-style converter + LoRA fine-tune
 dev = ["pytest>=8"]
 
 [project.scripts]
