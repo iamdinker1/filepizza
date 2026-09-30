@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from teacher_prosody.director.text_norm import normalise
@@ -80,3 +81,27 @@ def test_devanagari_loanwords_and_transliteration():
 def test_bracketed_formula_and_prose_brackets():
     assert normalise("R = √(A^2 + B^2 + 2AB cos θ)").spoken == "R equals root A square plus B square plus two A B cos theta"
     assert normalise("Ab dekho (yeh important hai)").spoken == "Ab dekho yeh important hai"
+
+
+def test_sherpa_whisper_pads_short_windows_to_lift_token_cap():
+    from teacher_prosody.preprocess.backends import SherpaWhisperASR
+
+    seen = {}
+
+    class FakeStream:
+        def accept_waveform(self, sr, samples):
+            seen["n"] = len(samples)
+
+        result = type("R", (), {"text": "{e0a4b9}{e0a482}"})()  # "हं" as hex-token bytes
+
+    class FakeRec:
+        def create_stream(self):
+            return FakeStream()
+
+        def decode_stream(self, s):
+            pass
+
+    asr = SherpaWhisperASR.__new__(SherpaWhisperASR)
+    asr.rec = FakeRec()
+    assert asr.decode(np.zeros(16000 * 3, np.float32)) == "हं"
+    assert seen["n"] == SherpaWhisperASR.PAD_TO  # 3 s of audio decoded as a full 30 s window

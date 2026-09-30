@@ -216,15 +216,17 @@ class SherpaWhisperASR:
     """Whisper (ONNX, int8) via sherpa-onnx with Silero VAD chunking. Runs on CPU with models from
     GitHub releases (k2-fsa/sherpa-onnx `asr-models`), so it works where huggingface.co is blocked.
 
-    Verified in the build sandbox on the 30-min Rajwant Sir sample: ~0.6x real time on 4 CPUs
-    (whisper-turbo int8). Hindi mode keeps English physics terms in Latin script and Hindi in
+    Runs on 4 CPUs (whisper-turbo int8). Each <= 8 s window is padded to 30 s because sherpa-onnx caps
+    output tokens by input length, which truncated Hindi before (see `decode`). Hindi mode keeps English physics terms in Latin script and Hindi in
     Devanagari. sherpa-onnx decodes each BPE token to text on its own and drops partial UTF-8
     bytes (broken Devanagari), so `hexify_tokens` rewrites the token table to emit hex bytes that
     are re-assembled and decoded here. No word timestamps: pair with an aligner.
     """
 
+    PAD_TO = int(29.9 * 16000)
+
     def __init__(self, model_dir: str, vad_model: str, language: str = "hi", num_threads: int = 4,
-                 prefix: str = "turbo", max_chunk_s: float = 20.0, min_silence_s: float = 0.35):
+                 prefix: str = "turbo", max_chunk_s: float = 8.0, min_silence_s: float = 0.35):
         import sherpa_onnx
 
         d = Path(model_dir)
@@ -262,15 +264,21 @@ class SherpaWhisperASR:
         return out
 
     def decode(self, samples: np.ndarray) -> str:
+        # sherpa-onnx caps Whisper output at ~6 tokens per second of input audio, and Devanagari costs
+        # ~1-2 tokens per character, so unpadded Hindi is cut off mid-sentence. Padding with silence to
+        # Whisper's native 30 s window lifts the cap to ~180 tokens (enough for <= ~8 s of speech).
+        if len(samples) < self.PAD_TO:
+            samples = np.concatenate([samples, np.zeros(self.PAD_TO - len(samples), np.float32)])
         s = self.rec.create_stream()
         s.accept_waveform(16000, samples)
         self.rec.decode_stream(s)
         raw = bytes.fromhex("".join(re.findall(r"\{([0-9a-f]*)\}", s.result.text)))
         return raw.decode("utf-8", errors="ignore").strip()
 
-    def merged_chunks(self, audio: Audio, max_window_s: float = 28.0) -> list[tuple[float, np.ndarray]]:
+    def merged_chunks(self, audio: Audio, max_window_s: float = 8.0) -> list[tuple[float, np.ndarray]]:
         """Merge neighbouring VAD chunks into windows <= max_window_s. Whisper's encoder always pays
-        for a 30 s window, so many short calls are slow, and very short chunks decode poorly."""
+        for a 30 s window, so many short calls are slow, and very short chunks decode poorly; windows
+        longer than ~8 s of Hindi overflow the output cap (see `decode`)."""
         spans = [(t0, t0 + len(x) / 16000) for t0, x in self.chunks(audio)]
         merged: list[list[float]] = []
         for a, b in spans:
